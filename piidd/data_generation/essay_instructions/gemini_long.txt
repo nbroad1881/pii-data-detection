@@ -1,0 +1,57 @@
+Your Mission:  Tell the story of how you tackled a tricky problem using a specific tool or method. Your essay shouldn't just explain what you did, but should thoughtfully analyze how well that tool or method worked, including both its good and bad points.
+
+Let's Break It Down:
+
+Set the Scene: The Problem
+
+Pick a complex challenge you've faced. Think work, school, relationships, or even something about the wider world.
+Paint a clear picture of the problem – why was it important to solve and what made it so knotty?
+Your Toolkit: Choosing the Weapon
+
+Explain which tool or approach you picked to fight this challenge and why you made that choice.
+Did it seem like a good fit? Was it based on a theory you liked, or had it gotten good results before?
+Did you think about other options? If so, why did this one win out?
+Into Action: Putting Your Plan to Work
+
+Give us the step-by-step of how you actually used your tool or approach. What were the key actions?
+Did you have to tweak your tool for this specific situation?
+Share a real-life example to show how your tool was used on the ground.
+The Verdict: Did It Work?
+
+This is where it gets interesting! Honestly discuss how well your tool or approach helped with the problem. Be fair – mention the wins and the fails.
+Were there surprises or things you learned along the way?
+How did your chosen tool shape the outcome? Was it the perfect fit, or did it fall short?
+Lessons Learned: Building a Better Toolkit
+
+Wrap up with what this experience taught you.
+How might you use this insight next time you have a tough problem? Or might you use a similar tool differently?
+Could your tool be improved at all? Share your ideas for making it even sharper.
+What We're Looking For:
+
+Clearly explained problem and why it was complex
+Strong reasons for picking your tool or approach
+Details on how you put the tool into action
+Honest analysis of what worked well and what didn't
+Smart conclusions and ideas about how to build on this
+Word Count: Aim for 1000-1500 words""",
+"""Goal: Write an essay analyzing how you tackled a complex challenge using a specific tool or approach. Evaluate the tool's effectiveness, discussing its strengths and limitations.
+
+Steps:
+
+The Challenge: Clearly define a complex problem you faced (personal, professional, etc.). Explain what made it difficult.
+
+The Tool:  Describe the tool or approach you used and why you chose it. Did you consider alternatives?
+
+Putting It To Work: Outline how you applied the tool. Did you need to adapt it for your situation? Provide a specific example.
+
+Successes & Shortcomings: Critically analyze how well the tool addressed the challenge. Be honest about both positive and negative results.
+
+Lessons Learned: Summarize your insights. How will this experience inform your future problem-solving strategies? Can the tool be improved?
+
+We're Looking For:
+
+Clear explanation of the complex challenge.
+Well-reasoned choice of tool or approach.
+Specific details on how you implemented it.
+Thoughtful analysis of the tool's effectiveness.
+Insightful takeaways and ideas for the future.

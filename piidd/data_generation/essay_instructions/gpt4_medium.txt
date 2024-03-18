@@ -1,0 +1,20 @@
+Essay Brief: Strategy Application in Complex Problem-Solving
+
+Objective:
+Write a concise essay on your use of a specific strategy to solve a complex issue, critically evaluating its effectiveness and limitations.
+
+Instructions:
+
+    Introduction: Outline a complex issue tackled, emphasizing its significance.
+    Strategy Choice: Explain your chosen strategy, why it was selected, and any alternatives.
+    Implementation: Detail the application process and examples of its use.
+    Evaluation: Assess the strategy's success, limitations, and any surprises.
+    Conclusion: Summarize insights and future applicability, suggesting improvements.
+
+Criteria:
+
+    Issue clarity and complexity.
+    Justification for strategy choice.
+    Implementation and application insights.
+    Critical success evaluation.
+    Future applicability insights.
