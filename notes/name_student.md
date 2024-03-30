@@ -157,6 +157,48 @@ Name: [START] Maria [END]  Age:37  Labor: Cooker and wife  Sons> 1 girl of 10 ye
 ```
 
 
+---
+
+16684
+
+Mentions storytelling. Is this an indication that the names are made-up? The first prediction for the names is correct, but then the later preds are wrong.
+
+```
+Storytelling is the tool I’m considering here to showcase two characters Mr. John and Mr. David,  who as freshmen joining engineering colleges that provide outcome based education and traditional  education. Their journey from first year first semester to their graduation is going to be showcased  to depict their persona towards emerging in to holistic beings that can become employees /  employers.
+```
+
+---
+
+4351
+
+A bunch of names 
+
+```
+Stakeholders Lead Artist Designer: Tyler Okey Project Manager: Local Architect, Sudan, Khartoum Execution Team of Young Artists: to be named, Khartoum, Sudan Structure and Material Consultants: Sin Nazri, Mechanical Engineer and Wire Product Expert,  Toronto, Canada Senior Mentor Artists: Ivan Marta-Conceptual Artist, and Sculpture,  Istanbul, Turkey       Liz Okey Visual Artist, Curator, Toronto, Canada Cultural Consultant: Not named yet. Their task is to make sure that the work is appropriate and  mindful of cultural sensibilities of the viewing public.
+```
+
+---
+
+9920
+
+Very borderline case of a made up story based on a real person. Muhammad is labeled as pii.
+
+```
+I started by creating a fictional character based on the students I talked to that  usually eat lunch alone. To support my pitch, I took several pictures of the dining hall and  students sitting alone at tables (with their permission of course). The pitch I wrote was based  on Muhammad, a freshman that has experienced loneliness also during high school, and now has  some difficulties making friends at college. Due to the circumstances, Muhammad eats lunch alone,  listening to music most of the time. However, he is not happy with the current situation, but  struggles to just sit with people he doesn’t know.
+```
+
+---
+
+
+Stories:
+
+1210
+9585
+7197
+11806
+8962
+13017
+
 ## Ideas
 
 - Use LLM to confirm predictions?
@@ -173,6 +215,9 @@ Name: [START] Maria [END]  Age:37  Labor: Cooker and wife  Sons> 1 girl of 10 ye
 - whenever an I-NAME_STUDENT is found, check the previous token
 - Find all words that are title cased and longer than 2 characters, see if they are in name bank (be sure to normalize accents)
   - In the provided set, the following code produces 163888 matches. There are a total of 4992533 tokens in the training set. (3% matches)
+- I don't think there should be more than one period in the name. 
+
+- Put instructor names as decoys in generated data
 
 ```python
   matches = list()
@@ -182,3 +227,5 @@ for d in data:
 
 len(matches) # 163888
 ``` 
+
+
