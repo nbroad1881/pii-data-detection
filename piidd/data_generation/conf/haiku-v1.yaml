@@ -1,0 +1,21 @@
+
+# relative to project home dir
+data_dir: "data/essays"
+file_glob: "*haiku-v2-200-*.pq"
+
+essay_column: "response"
+names_column: 
+famous_column: "famous_person"
+url_pattern: "<personal_url>"
+names_pattern: "<personal_name>"
+public_url_pattern: "<public_url#>"
+num_proc: 10
+
+output_path: "data/essays/haiku-v1.pq"
+
+functions:
+  remove_here_is: yes
+
+filters:
+  no_pii_haiku: yes
+  no_errors: yes

@@ -1,0 +1,20 @@
+
+# relative to project home dir
+data_dir: "data/essays"
+file_glob: "mixtral-200-<<*.pq"
+
+essay_column: "essay"
+names_column: "names"
+famous_column: "famous_person"
+url_pattern: "<<URL>>"
+num_proc: 10
+
+output_path: "data/essays/mixtral-v1a.pq"
+
+functions:
+  remove_note: yes
+  remove_word_count: yes
+
+filters:
+  url_outside_angle_brackets: yes
+  no_pii: yes

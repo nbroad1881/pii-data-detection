@@ -1,0 +1,15 @@
+net
+com
+co
+github.io
+wordpress.com
+medium.com
+wix.com
+squarespace.com
+tumblr.com
+substack.com
+me
+org
+biz
+info
+blog
