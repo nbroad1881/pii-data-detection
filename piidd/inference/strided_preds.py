@@ -1,5 +1,6 @@
 import json
 import argparse
+from pathlib import Path
 
 from transformers import (
     AutoTokenizer,
@@ -11,60 +12,7 @@ from transformers import (
 from datasets import Dataset
 import numpy as np
 
-
-def tokenize(example, tokenizer, max_length, stride):
-    text = []
-
-    tokens = example["tokens"][0]
-    trailing_whitespace = example["trailing_whitespace"][0]
-
-    for t, ws in zip(tokens, trailing_whitespace):
-        text.append(t)
-        if ws:
-            text.append(" ")
-
-    tokenized = tokenizer(
-        "".join(text),
-        return_offsets_mapping=True,
-        max_length=max_length,
-        truncation=True,
-        stride=stride,
-        return_overflowing_tokens=True,
-        padding="max_length",
-    )
-
-    # tokenized is now a list of lists depending on how long the input is, the max length, and the stride
-
-    text = "".join(text)
-
-    idxs = {}
-    if "idx" in example:
-        # only applies to validation data
-        idxs = {"idx": [example["idx"][0]] * len(tokenized.input_ids)}
-
-    return {**tokenized, **idxs}
-
-
-def add_token_map(example):
-    """
-    token_map is a list of indices that map the tokenized input to the original input.
-    token_map is the same length as the text, and the i-th value is the index of the token that the i-th character belongs to.
-
-    """
-    token_map = []
-
-    idx = 0
-
-    for t, ws in zip(example["tokens"], example["trailing_whitespace"]):
-
-        token_map.extend([idx] * len(t))
-        if ws:
-            token_map.append(-1)
-
-        idx += 1
-
-    return {"token_map": token_map}
-
+from piidd.processing.pre import add_token_map, strided_tokenize
 
 def main():
 
@@ -83,6 +31,8 @@ def main():
     parser.add_argument("--dataset_output_path", type=str, default="ds.pq")
     parser.add_argument("--tokenized_output_path", type=str, default="tds.pq")
     parser.add_argument("--preds_output_path", type=str, default="preds.npy")
+    parser.add_argument("--msd", action="store_true")
+    parser.add_argument("--add_labels", action="store_true")
 
     args = parser.parse_args()
 
@@ -97,9 +47,13 @@ def main():
         }
     )
 
+    if args.add_labels:
+        ds = ds.add_column("provided_labels", [x["labels"] for x in data])
+
     ds = ds.add_column("idx", list(range(len(ds))))
     ds = ds.map(add_token_map, num_proc=args.num_proc)
 
+    Path(args.dataset_output_path).parent.mkdir(exist_ok=True, parents=True)
     ds.to_parquet(args.dataset_output_path)
 
     keep_cols = ["input_ids", "attention_mask"]
@@ -107,22 +61,30 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
 
+
+    if args.msd:
+        print("using msd model")
+
+        from piidd.models.layerdrop_deberta import MultiSampleDebertaV2ForTokenClassification
+        model_class = MultiSampleDebertaV2ForTokenClassification
+    else:
+        model_class = AutoModelForTokenClassification
+
+    model = model_class.from_pretrained(args.model_path)
+
     ds = ds.map(
-        tokenize,
+        strided_tokenize,
         fn_kwargs={
             "tokenizer": tokenizer,
             "max_length": args.max_length,
             "stride": args.stride,
+            "label2id": model.config.label2id,
         },
         num_proc=args.num_proc,
         batched=True,
         batch_size=1,
         remove_columns=remove_cols,
     )
-
-    model = AutoModelForTokenClassification.from_pretrained(args.model_path)
-
-    collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=16)
 
     targs = TrainingArguments(
         ".",
@@ -134,8 +96,6 @@ def main():
     trainer = Trainer(
         model=model,
         args=targs,
-        data_collator=collator,
-        tokenizer=tokenizer,
     )
 
     predictions = trainer.predict(ds).predictions
