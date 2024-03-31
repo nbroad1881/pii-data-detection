@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='piidd',
-    version='0.1',
+    version='0.1.6',
     packages=find_packages(),
     author='Nicholas Broad',
     description='Code for PII data detection Kaggle competition',
