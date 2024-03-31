@@ -37,6 +37,7 @@ def main():
     parser.add_argument("--output_path", type=str, default="out")
     parser.add_argument("--output_csv_path", type=str, default="submission.csv")
     parser.add_argument("--include_token_text", action="store_true")
+    parser.add_argument("--return_all_token_scores", action="store_true")
     parser.add_argument("--return_char_preds", action="store_true")
     parser.add_argument("--save_char_preds_path", type=str, default="char_preds.pkl")
     parser.add_argument("--thresholds", type=str, default="0.9")
@@ -62,12 +63,24 @@ def main():
 
     output_dir.mkdir(exist_ok=True, parents=True)
 
-    gt_df = make_gt_dataframe(ds)
 
     data = json.load(open(args.data_path))
 
-    f5s = []
+    if args.return_all_token_scores:
+        pred_df = get_all_preds(
+            predictions,
+            ds,
+            tds,
+            id2label,
+            return_char_preds=False,
+            return_all_token_scores=True,
+        )
+        pred_df.to_parquet(args.output_csv_path, index=False)
+        return
 
+    gt_df = make_gt_dataframe(ds)
+
+    f5s = []
     for th in thresholds:
         pred_df, char_preds = get_all_preds(
             predictions,

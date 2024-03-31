@@ -5,12 +5,13 @@ import pandas as pd
 
 
 def char2token_preds(
-        char_preds, 
-        token_map, 
-        id2label, 
-        threshold=0.9,
-        pooling_function="max"
-        ):
+    char_preds,
+    token_map,
+    id2label,
+    threshold=0.9,
+    pooling_function="max",
+    return_all_token_scores=False,
+):
     """
     This will return predictions at the token level for a single document.
 
@@ -22,6 +23,9 @@ def char2token_preds(
         id2label: dict, mapping from label id to label
         threshold: float, threshold for predictions
             "O" predictions must be above this otherwise the second highest score will be used.
+        pooling_function: str, "max" or "mean"
+            How to pool the character predictions to get a token prediction.
+        return_all_token_scores: bool, whether to return all scores for each token
 
 
     Returns:
@@ -36,8 +40,7 @@ def char2token_preds(
         else:
             raise ValueError(f"Pooling function {pooling_function} not supported")
 
-
-    # pair of (token_id, pooled_scores)
+    # pair of (token_id, scores)
     token_preds = []
 
     # go through token map
@@ -68,15 +71,20 @@ def char2token_preds(
             pooled_scores = pool(char_preds[start_idx:end_idx])
             # pooled_scores.shape == (len(all_labels),)
 
-            # can do thresholding here
-
-            top_ids = pooled_scores.argsort()[::-1]  # reverse to go from high to low
-
-            if id2label[top_ids[0]] == "O":
-                if pooled_scores[top_ids[0]] < threshold:
-                    token_preds.append((current, id2label[top_ids[1]]))
+            if return_all_token_scores:
+                token_preds.append((current, pooled_scores))
             else:
-                token_preds.append((current, id2label[top_ids[0]]))
+                # can do thresholding here
+
+                top_ids = pooled_scores.argsort()[
+                    ::-1
+                ]  # reverse to go from high to low
+
+                if id2label[top_ids[0]] == "O":
+                    if pooled_scores[top_ids[0]] < threshold:
+                        token_preds.append((current, id2label[top_ids[1]]))
+                else:
+                    token_preds.append((current, id2label[top_ids[0]]))
 
             start_idx = i
             current = token_map[i]
@@ -90,53 +98,75 @@ def char2token_preds(
 
             pooled_scores = pool(char_preds[start_idx:end_idx])
 
-            top_ids = pooled_scores.argsort()[::-1]
-
-            if id2label[top_ids[0]] == "O":
-                if pooled_scores[top_ids[0]] < threshold:
-                    token_preds.append((current, id2label[top_ids[1]]))
+            if return_all_token_scores:
+                token_preds.append((current, pooled_scores))
             else:
-                token_preds.append((current, id2label[top_ids[0]]))
+                top_ids = pooled_scores.argsort()[::-1]
+
+                if id2label[top_ids[0]] == "O":
+                    if pooled_scores[top_ids[0]] < threshold:
+                        token_preds.append((current, id2label[top_ids[1]]))
+                else:
+                    token_preds.append((current, id2label[top_ids[0]]))
 
     return token_preds
 
 
-def make_pred_df(all_preds, doc_idxs, all_tokens):
+def make_pred_df(
+    all_preds, doc_idxs, all_tokens, return_all_token_scores=False, id2label=None
+):
     """
     all_preds is a list of lists of tuples
 
     """
 
-    all_token_ids = []
-    all_labels = []
-    all_doc_idxs = []
-    token_texts = []
+    all_token_ids, all_labels, all_doc_idxs, token_texts = [], [], [], []
+
+    if return_all_token_scores:
+        all_scores = []
 
     for preds, doc_idx, tokens in zip(all_preds, doc_idxs, all_tokens):
-        for token_id, label in preds:
+        for token_id, label_preds in preds:
             if tokens[token_id].isspace():
                 continue
 
+            if return_all_token_scores:
+                all_scores.append(label_preds)
+            else:
+                all_labels.append(label_preds)
+
             all_token_ids.append(token_id)
-            all_labels.append(label)
             all_doc_idxs.append(doc_idx)
             token_texts.append(tokens[token_id])
 
     df = pd.DataFrame(
         {
             "token": all_token_ids,
-            "label": all_labels,
             "document": all_doc_idxs,
             "token_text": token_texts,
         }
     )
+
+    if return_all_token_scores:
+        label_cols = [id2label[i] for i in range(len(id2label))]
+        df[label_cols] = all_scores
+    else:
+        df["label"] = all_labels
 
     df["row_id"] = range(len(df))
 
     return df
 
 
-def get_all_preds(predictions, raw_ds, tokenized_ds, id2label, threshold=0.9, return_char_preds=False):
+def get_all_preds(
+    predictions,
+    raw_ds,
+    tokenized_ds,
+    id2label,
+    threshold=0.9,
+    return_char_preds=False,
+    return_all_token_scores=False,
+):
 
     # each idx in raw_ds corresponds to multiple idx in tokenized_ds (due to stride)
     idx2tidxs = {}
@@ -145,14 +175,12 @@ def get_all_preds(predictions, raw_ds, tokenized_ds, id2label, threshold=0.9, re
             idx2tidxs[x] = []
         idx2tidxs[x].append(i)
 
-
     all_preds = []
     all_char_preds = []
 
     for idx in raw_ds["idx"]:
         temp_preds = [predictions[x] for x in idx2tidxs[idx]]
         temp_tds = tokenized_ds.select(idx2tidxs[idx])
-
 
         token_map = raw_ds[idx]["token_map"]
 
@@ -165,10 +193,12 @@ def get_all_preds(predictions, raw_ds, tokenized_ds, id2label, threshold=0.9, re
                 if start_idx + end_idx == 0:
                     continue
 
-                char_preds[start_idx:end_idx] = np.maximum(char_preds[start_idx:end_idx], p)
-        
+                char_preds[start_idx:end_idx] = np.maximum(
+                    char_preds[start_idx:end_idx], p
+                )
+
         token_preds = char2token_preds(
-            char_preds, token_map, id2label, threshold=threshold
+            char_preds, token_map, id2label, threshold=threshold, return_all_token_scores=return_all_token_scores
         )
 
         all_preds.append(token_preds)
@@ -176,7 +206,13 @@ def get_all_preds(predictions, raw_ds, tokenized_ds, id2label, threshold=0.9, re
         if return_char_preds:
             all_char_preds.append(char_preds.astype(np.float16))
 
-    pred_df = make_pred_df(all_preds, raw_ds["document"], raw_ds["tokens"])
+    pred_df = make_pred_df(
+        all_preds,
+        raw_ds["document"],
+        raw_ds["tokens"],
+        return_all_token_scores,
+        id2label,
+    )
 
     if return_char_preds:
         return pred_df, all_char_preds
@@ -229,7 +265,7 @@ def add_repeated_names(df, data):
                 "token": tokens2add,
                 "label": labels2add,
                 "document": doc2add,
-                "token_text": token_texts
+                "token_text": token_texts,
             }
         )
         df = pd.concat([df, temp], ignore_index=True)
@@ -277,8 +313,8 @@ def add_emails_and_urls(df, data):
             subset=["document", "token", "label"]
         )
 
-
     return df
+
 
 def check_name_casing(pred_df):
     """
@@ -286,25 +322,31 @@ def check_name_casing(pred_df):
     It should not be all caps, just the first letter.
     """
 
-    pred_df["bad_name_casing"] = ["NAME_STUDENT" in l and not t.istitle() for t, l in zip(pred_df["token_text"], pred_df["label"])]
+    pred_df["bad_name_casing"] = [
+        "NAME_STUDENT" in l and not t.istitle()
+        for t, l in zip(pred_df["token_text"], pred_df["label"])
+    ]
 
     return pred_df[~pred_df["bad_name_casing"]].reset_index(drop=True)
+
 
 def remove_name_titles(pred_df):
     """
     Remove predictions like Mr, Mrs, Dr, etc.
     """
 
-    for idx, (token_text, token_idx, pred_label) in enumerate(pred_df[["token_text", "token", "label"]].values):
+    for idx, (token_text, token_idx, pred_label) in enumerate(
+        pred_df[["token_text", "token", "label"]].values
+    ):
         if pred_label in {"B-NAME_STUDENT", "I-NAME_STUDENT"}:
             if token_text.lower().rstrip(".") in {"mr", "mrs", "dr", "ms", "miss"}:
                 pred_df.at[idx, "label"] = "O"
 
                 if idx > 0 and idx + 1 < len(pred_df):
-                    if pred_df["token"][idx+1] == token_idx + 1:
-                        if pred_df["label"][idx+1] == "I-NAME_STUDENT":
-                            pred_df.at[idx+1, "label"] = "B-NAME_STUDENT"
-    
+                    if pred_df["token"][idx + 1] == token_idx + 1:
+                        if pred_df["label"][idx + 1] == "I-NAME_STUDENT":
+                            pred_df.at[idx + 1, "label"] = "B-NAME_STUDENT"
+
     return pred_df[pred_df["label"] != "O"].reset_index(drop=True)
 
 
@@ -327,17 +369,16 @@ def correct_name_student_preds(pred_df):
                 pred_label = filtered["label"].values[idx]
                 token_idx = filtered["token"].values[idx]
                 df_idx = filtered.index.values[idx]
-                
-                # if current pred is "B-NAME_STUDENT" 
+
+                # if current pred is "B-NAME_STUDENT"
                 # and previous token was also "B-NAME_STUDENT"
                 # then change this one to "I-NAME_STUDENT"
                 if pred_label == "B-NAME_STUDENT":
 
-                    if idx > 0 and filtered["token"].values[idx-1] == token_idx - 1:
-                        if filtered["label"].values[idx-1] == "B-NAME_STUDENT":
+                    if idx > 0 and filtered["token"].values[idx - 1] == token_idx - 1:
+                        if filtered["label"].values[idx - 1] == "B-NAME_STUDENT":
                             filtered.at[df_idx, "label"] = "I-NAME_STUDENT"
                             pred_df.at[df_idx, "label"] = "I-NAME_STUDENT"
-                    
 
                 elif pred_label == "I-NAME_STUDENT":
                     if idx == 0:
@@ -346,10 +387,9 @@ def correct_name_student_preds(pred_df):
                     else:
                         # if the previous token is not next to this token (by token id)
                         # then this should be "B"
-                        if filtered["token"].values[idx-1] != token_idx -1:
+                        if filtered["token"].values[idx - 1] != token_idx - 1:
                             filtered.at[df_idx, "label"] = "B-NAME_STUDENT"
                             pred_df.at[df_idx, "label"] = "B-NAME_STUDENT"
-
 
     return pred_df
 
@@ -364,7 +404,7 @@ def check_urls(pred_df):
     """
 
     bad_urls = []
-    
+
     pred_df = pred_df.reset_index(drop=True)
 
     for i, (label, token_text) in enumerate(pred_df[["label", "token_text"]].values):
@@ -372,42 +412,48 @@ def check_urls(pred_df):
             if "coursera.org" in token_text or "wikipedia.org" in token_text:
                 bad_urls.append(i)
             elif ".gov" in token_text or ".edu" in token_text:
-                 bad_urls.append(i)
-            elif not any(["http" in token_text, "://" in token_text, "www." in token_text]):
-                 bad_urls.append(i)
+                bad_urls.append(i)
+            elif not any(
+                ["http" in token_text, "://" in token_text, "www." in token_text]
+            ):
+                bad_urls.append(i)
         elif label == "I-URL_PERSONAL":
-             bad_urls.append(i)
-
+            bad_urls.append(i)
 
     return pred_df[~pred_df.index.isin(bad_urls)].reset_index(drop=True)
+
 
 def remove_bad_categories(pred_df):
     """
     As of March 14, these categories were always FP.
     """
-    bad_categories = set([
-        "I-USERNAME",
-        "I-EMAIL",
-        "I-URL_PERSONAL",
-#         "I-ID_NUM",
-    ])
-    
+    bad_categories = set(
+        [
+            "I-USERNAME",
+            "I-EMAIL",
+            "I-URL_PERSONAL",
+            #         "I-ID_NUM",
+        ]
+    )
+
     return pred_df[~pred_df.label.isin(bad_categories)].reset_index(drop=True)
 
 
 def check_phone_numbers(pred_df):
     """
     Rules:
-    - If a token that has been predicted as "B-PHONE_NUM" has a number that 
-    1) is longer than 4 digits 
+    - If a token that has been predicted as "B-PHONE_NUM" has a number that
+    1) is longer than 4 digits
     2) doesn't have any of {"(", ")", ".", "x", "-"}
     then it should be "B-ID_NUM"
     """
-    
-    for i, (doc, label, token_text) in enumerate(pred_df[["document", "label", "token_text"]].values):
+
+    for i, (doc, label, token_text) in enumerate(
+        pred_df[["document", "label", "token_text"]].values
+    ):
         if label == "B-PHONE_NUM":
             if len(token_text) > 4:
                 if not any([x in token_text for x in {"(", ")", ".", "x", "-", "+"}]):
-                    pred_df.at[i, 'label'] = "B-ID_NUM"
-    
+                    pred_df.at[i, "label"] = "B-ID_NUM"
+
     return pred_df
