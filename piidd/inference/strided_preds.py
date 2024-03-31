@@ -7,7 +7,6 @@ from transformers import (
     AutoModelForTokenClassification,
     Trainer,
     TrainingArguments,
-    DataCollatorForTokenClassification,
 )
 from datasets import Dataset
 import numpy as np
@@ -31,10 +30,17 @@ def main():
     parser.add_argument("--dataset_output_path", type=str, default="ds.pq")
     parser.add_argument("--tokenized_output_path", type=str, default="tds.pq")
     parser.add_argument("--preds_output_path", type=str, default="preds.npy")
-    parser.add_argument("--msd", action="store_true")
-    parser.add_argument("--add_labels", action="store_true")
+    parser.add_argument("--msd", type=int, default=0)
+    parser.add_argument("--add_labels", type=int, default=0)
 
     args = parser.parse_args()
+
+    targs = TrainingArguments(
+        ".",
+        per_device_eval_batch_size=args.batch_size,
+        report_to="none",
+        dataloader_num_workers=1,
+    )
 
     data = json.load(open(args.data_path))
 
@@ -51,7 +57,9 @@ def main():
         ds = ds.add_column("provided_labels", [x["labels"] for x in data])
 
     ds = ds.add_column("idx", list(range(len(ds))))
-    ds = ds.map(add_token_map, num_proc=args.num_proc)
+
+    with targs.main_process_first(desc="Adding token map"):
+        ds = ds.map(add_token_map, num_proc=args.num_proc)
 
     Path(args.dataset_output_path).parent.mkdir(exist_ok=True, parents=True)
     ds.to_parquet(args.dataset_output_path)
@@ -72,26 +80,20 @@ def main():
 
     model = model_class.from_pretrained(args.model_path)
 
-    ds = ds.map(
-        strided_tokenize,
-        fn_kwargs={
-            "tokenizer": tokenizer,
-            "max_length": args.max_length,
-            "stride": args.stride,
-            "label2id": model.config.label2id,
-        },
-        num_proc=args.num_proc,
-        batched=True,
-        batch_size=1,
-        remove_columns=remove_cols,
-    )
-
-    targs = TrainingArguments(
-        ".",
-        per_device_eval_batch_size=args.batch_size,
-        report_to="none",
-        dataloader_num_workers=1,
-    )
+    with targs.main_process_first(desc="Tokenizing"):
+        ds = ds.map(
+            strided_tokenize,
+            fn_kwargs={
+                "tokenizer": tokenizer,
+                "max_length": args.max_length,
+                "stride": args.stride,
+                "label2id": model.config.label2id,
+            },
+            num_proc=args.num_proc,
+            batched=True,
+            batch_size=1,
+            remove_columns=remove_cols,
+        )
 
     trainer = Trainer(
         model=model,
