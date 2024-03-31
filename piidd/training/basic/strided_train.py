@@ -3,7 +3,7 @@ import json
 
 from datetime import datetime
 from functools import partial
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 
 from transformers import (
     AutoTokenizer,
@@ -16,6 +16,10 @@ from transformers import (
 )
 from tokenizers import AddedToken
 from datasets import Dataset, concatenate_datasets
+import hydra
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig, OmegaConf
+from dotenv import load_dotenv
 
 from piidd.training.utils import (
     SwapNameCallback,
@@ -31,7 +35,7 @@ from piidd.models.layerdrop_deberta import (
 from piidd.processing.pre import strided_tokenize, add_token_map
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
+load_dotenv("../../../.env")
 
 @dataclass
 class Config(TrainingArguments):
@@ -56,6 +60,8 @@ class Config(TrainingArguments):
     )
     lora_r: int = field(default=16)
     lora_modules: str = field(default="all-linear")
+    lora_dropout: float = field(default=0.1)
+    use_dora: bool = field(default=False)
 
     random_seed: bool = field(default=True)
 
@@ -67,24 +73,36 @@ class Config(TrainingArguments):
 
     main_dataset_path: str = field(default="train.json")
     extra_dataset_path: str = field(default=None)
-    remove_classes: str = field(default="I-URL_PERSONAL,I-EMAIL,I-USERNAME")
+    remove_classes: str = field(default="I-EMAIL,I-USERNAME")
+
+    debugg: bool = field(default=False)
 
 
-def main():
-    parser = HfArgumentParser((Config,))
+@hydra.main(version_base=None, config_path="conf")
+def main(cfg: DictConfig) -> None:
 
-    args = parser.parse_args_into_dataclasses()[0]
+    os.environ["WANDB_RUN_GROUP"] = cfg.wandb_run_group
 
-    if args.random_seed:
-        args.seed = datetime.now().microsecond
-        set_seed(args.seed)
+    cfg = Config(
+        **{
+            k: v
+            for k, v in OmegaConf.to_container(cfg, resolve=True).items()
+            if k in asdict(Config("."))
+        }
+    )
 
-    if "," in args.lora_modules:
-        args.lora_modules = args.lora_modules.split(",")
+    cfg.output_dir = HydraConfig.get().runtime.output_dir
 
-    args.run_name = None
+    if cfg.random_seed:
+        cfg.seed = datetime.now().microsecond
+        set_seed(cfg.seed)
 
-    data = json.load(open(args.main_dataset_path))
+    if "," in cfg.lora_modules:
+        cfg.lora_modules = cfg.lora_modules.split(",")
+
+    cfg.run_name = None
+
+    data = json.load(open(cfg.main_dataset_path))
 
     base_labels = {
         "EMAIL",
@@ -101,8 +119,8 @@ def main():
         all_labels.append(f"I-{ll}")
     all_labels.append("O")
 
-    if args.remove_classes is not None:
-        remove_classes = args.remove_classes.split(",")
+    if cfg.remove_classes is not None:
+        remove_classes = cfg.remove_classes.split(",")
         for rc in remove_classes:
             all_labels = [x for x in all_labels if rc not in x]
 
@@ -121,15 +139,15 @@ def main():
     )
 
     ds1_train = ds1.filter(
-        lambda x: int(x["document"]) % 4 != args.fold, num_proc=args.num_proc
+        lambda x: int(x["document"]) % 4 != cfg.fold, num_proc=cfg.num_proc
     )
     ds1_test = ds1.filter(
-        lambda x: int(x["document"]) % 4 == args.fold, num_proc=args.num_proc
+        lambda x: int(x["document"]) % 4 == cfg.fold, num_proc=cfg.num_proc
     )
 
-    if args.extra_dataset_path is not None:
-        if args.extra_dataset_path.endswith(".json"):
-            data2 = json.load(open(args.extra_dataset_path))
+    if cfg.extra_dataset_path is not None:
+        if cfg.extra_dataset_path.endswith(".json"):
+            data2 = json.load(open(cfg.extra_dataset_path))
             ds2 = Dataset.from_dict(
                 {
                     "full_text": ["" for x in data2],
@@ -139,8 +157,8 @@ def main():
                     "provided_labels": [x["labels"] for x in data2],
                 }
             )
-        elif args.extra_dataset_path.endswith(".pq"):
-            ds2 = Dataset.from_parquet(args.extra_dataset_path)
+        elif cfg.extra_dataset_path.endswith(".pq"):
+            ds2 = Dataset.from_parquet(cfg.extra_dataset_path)
 
     if "essay" in ds2.column_names:
         ds2 = ds2.rename_column("essay", "full_text")
@@ -149,24 +167,25 @@ def main():
 
     raw_ds = concatenate_datasets([ds1_train.remove_columns(["document"]), ds2])
 
-    if args.train_on_all_data:
+    if cfg.train_on_all_data:
         raw_ds = concatenate_datasets([ds1_test.remove_columns(["document"]), raw_ds])
 
-    # raw_ds = raw_ds.select(range(500))
+    if cfg.debugg:
+        raw_ds = raw_ds.select(range(500))
 
-    # ds = ds1_train
+        ds = ds1_train
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_path)
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model_path)
 
-    if args.add_newline_token:
+    if cfg.add_newline_token:
         # lots of newlines in the text
         # adding this should be helpful
         tokenizer.add_tokens(AddedToken("\n", normalized=False))
 
     raw_ds = raw_ds.filter(
         filter_no_pii,
-        num_proc=args.num_proc,
-        fn_kwargs={"percent_allow": args.filter_no_pii_percent_allow},
+        num_proc=cfg.num_proc,
+        fn_kwargs={"percent_allow": cfg.filter_no_pii_percent_allow},
         keep_in_memory=True,
     )
 
@@ -178,10 +197,10 @@ def main():
         fn_kwargs={
             "tokenizer": tokenizer,
             "label2id": label2id,
-            "max_length": args.max_length,
-            "stride": args.stride,
+            "max_length": cfg.max_length,
+            "stride": cfg.stride,
         },
-        num_proc=args.num_proc,
+        num_proc=cfg.num_proc,
         batched=True,
         batch_size=1,
         remove_columns=remove_cols,
@@ -190,12 +209,12 @@ def main():
 
     ds1_test = ds1_test.filter(
         filter_no_pii,
-        num_proc=args.num_proc,
+        num_proc=cfg.num_proc,
         keep_in_memory=True,
     )
 
     ds1_test = ds1_test.add_column("idx", list(range(len(ds1_test))))
-    val_ds = ds1_test.map(add_token_map, num_proc=args.num_proc, keep_in_memory=True)
+    val_ds = ds1_test.map(add_token_map, num_proc=cfg.num_proc, keep_in_memory=True)
 
     gt_df = make_gt_dataframe(val_ds)
 
@@ -204,37 +223,37 @@ def main():
         fn_kwargs={
             "tokenizer": tokenizer,
             "label2id": label2id,
-            "max_length": args.max_length,
-            "stride": args.stride,
+            "max_length": cfg.max_length,
+            "stride": cfg.stride,
         },
-        num_proc=args.num_proc,
+        num_proc=cfg.num_proc,
         batched=True,
         batch_size=1,
         remove_columns=[x for x in ds1_test.column_names if x not in keep_cols],
         keep_in_memory=True,
     )
 
-    if "deberta-v" in args.model_path:
-        add_layer_drop(args.layer_drop_prob)
+    if "deberta-v" in cfg.model_path:
+        add_layer_drop(cfg.layer_drop_prob)
 
-    if args.use_lora:
+    if cfg.use_lora:
         model = create_peft_model(
-            args.model_path,
+            cfg.model_path,
             num_labels=len(all_labels),
             id2label=id2label,
             label2id=label2id,
-            model_dtype=args.model_dtype,
-            gradient_checkpointing=args.gradient_checkpointing,
-            lora_r=args.lora_r,
-            lora_modules=args.lora_modules,
-            lora_alpha=args.lora_r * 2,
-            lora_dropout=0.1,
-            use_multisample_dropout=args.use_multisample_dropout,
+            model_dtype=cfg.model_dtype,
+            gradient_checkpointing=cfg.gradient_checkpointing,
+            lora_r=cfg.lora_r,
+            lora_modules=cfg.lora_modules,
+            lora_alpha=cfg.lora_r * 2,
+            lora_dropout=cfg.lora_dropout,
+            use_multisample_dropout=cfg.use_multisample_dropout,
         )
     else:
-        if args.use_multisample_dropout:
+        if cfg.use_multisample_dropout:
             model = MultiSampleDebertaV2ForTokenClassification.from_pretrained(
-                args.model_path,
+                cfg.model_path,
                 num_labels=len(all_labels),
                 id2label=id2label,
                 label2id=label2id,
@@ -243,7 +262,7 @@ def main():
 
         else:
             model = AutoModelForTokenClassification.from_pretrained(
-                args.model_path,
+                cfg.model_path,
                 num_labels=len(all_labels),
                 id2label=id2label,
                 label2id=label2id,
@@ -253,21 +272,9 @@ def main():
 
     collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=16)
 
-    args.fp16 = True
-    args.learning_rate = args.lr
-    args.weight_decay = 0.01
-    args.report_to = ["wandb"]
-    args.evaluation_strategy = "epoch"
-    args.save_total_limit = 1
-    args.logging_steps = 50
-    args.metric_for_best_model = "f5_score"
-    args.greater_is_better = True
-    args.dataloader_num_workers = 1
-    args.lr_scheduler_type = "cosine"
-
     trainer = Trainer(
         model=model,
-        args=args,
+        args=cfg,
         train_dataset=ds,
         eval_dataset=tokenized_val_ds,
         data_collator=collator,
@@ -278,7 +285,7 @@ def main():
             tokenized_eval_ds=tokenized_val_ds,
             eval_data=val_ds,
             gt_df=gt_df,
-            output_dir=args.output_dir,
+            output_dir=cfg.output_dir,
         ),
     )
 
@@ -288,8 +295,8 @@ def main():
             strided_tokenize,
             tokenizer=tokenizer,
             label2id=label2id,
-            max_length=args.max_length,
-            stride=args.stride,
+            max_length=cfg.max_length,
+            stride=cfg.stride,
         ),
         trainer=trainer,
     )
