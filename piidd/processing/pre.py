@@ -5,15 +5,28 @@ def strided_tokenize(example, tokenizer, label2id, max_length, stride):
     char_labels = []
 
     tokens = example["tokens"][0]
-    provided_labels = example["provided_labels"][0]
+
+    add_labels = "provided_labels" in example
+
+    if add_labels:
+        provided_labels = example["provided_labels"][0]
     trailing_whitespace = example["trailing_whitespace"][0]
 
-    for t, label, ws in zip(tokens, provided_labels, trailing_whitespace):
+    zipped = [tokens, trailing_whitespace]
+    if add_labels:
+        zipped.append(provided_labels)
+    else:
+        zipped.append([None] * len(tokens))
+
+
+    for t, ws, label in zip(*zipped):
         text.append(t)
-        char_labels.extend([label] * len(t))
+        if add_labels:
+            char_labels.extend([label] * len(t))
         if ws:
             text.append(" ")
-            char_labels.append("O")
+            if add_labels:
+                char_labels.append("O")
 
     tokenized = tokenizer(
         "".join(text),
@@ -27,42 +40,46 @@ def strided_tokenize(example, tokenizer, label2id, max_length, stride):
 
     # tokenized is now a list of lists depending on how long the input is, the max length, and the stride
 
-    char_labels = np.array(char_labels)
+    labels = {}
+    if add_labels:
+        char_labels = np.array(char_labels)
 
-    text = "".join(text)
-    token_labels = (
-        np.ones((len(tokenized.input_ids), max_length), dtype=np.int32) * label2id["O"]
-    )
+        text = "".join(text)
+        token_labels = (
+            np.ones((len(tokenized.input_ids), max_length), dtype=np.int32) * label2id["O"]
+        )
 
-    for i in range(len(tokenized.input_ids)):
+        for i in range(len(tokenized.input_ids)):
 
-        for j, (start_idx, end_idx) in enumerate(tokenized.offset_mapping[i]):
-            # CLS token
-            if start_idx == 0 and end_idx == 0:
-                continue
+            for j, (start_idx, end_idx) in enumerate(tokenized.offset_mapping[i]):
+                # CLS token
+                if start_idx == 0 and end_idx == 0:
+                    continue
 
-            # case when token starts with whitespace
-            while (
-                start_idx < end_idx
-                and start_idx < len(text)
-                and text[start_idx].isspace()
-            ):
-                start_idx += 1
+                # case when token starts with whitespace
+                while (
+                    start_idx < end_idx
+                    and start_idx < len(text)
+                    and text[start_idx].isspace()
+                ):
+                    start_idx += 1
 
-            # the whole token might be whitespace
-            if start_idx >= end_idx:
-                continue
+                # the whole token might be whitespace
+                if start_idx >= end_idx:
+                    continue
 
-            start_idx = min(start_idx, len(char_labels) - 1)
+                start_idx = min(start_idx, len(char_labels) - 1)
 
-            token_labels[i, j] = label2id[char_labels[start_idx]]
+                token_labels[i, j] = label2id[char_labels[start_idx]]
+        
+        labels = {"labels": token_labels}
 
     idxs = {}
     if "idx" in example:
         # only applies to validation data
         idxs = {"idx": [example["idx"][0]] * len(tokenized.input_ids)}
 
-    return {**tokenized, "labels": token_labels, **idxs}
+    return {**tokenized, **labels, **idxs}
 
 
 def add_token_map(example):
