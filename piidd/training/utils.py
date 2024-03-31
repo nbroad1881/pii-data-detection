@@ -1,12 +1,16 @@
 import json
 import random
+from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 from datasets import Dataset
 from torch.utils.data import DataLoader
 from transformers import Trainer, TrainerCallback
 
 from piidd.models.layerdrop_deberta import MultiSampleDebertaV2ForTokenClassification
+from piidd.processing.post import get_all_preds
 
 this_dir = Path(__file__).resolve().parent
 
@@ -156,6 +160,7 @@ def create_peft_model(
         task_type="TOKEN_CLS",
         target_modules=lora_modules,
         bias="none",
+        use_dora=True,
     )
 
     return get_peft_model(model, config)
@@ -223,3 +228,96 @@ def chunk_for_spanmarker(ds, max_length, num_proc=8):
         }
 
     return ds.map(chunk, batched=True, num_proc=num_proc, remove_columns=ds.column_names)
+
+
+def make_gt_dataframe(eval_data):
+
+    all_token_ids = []
+    all_labels = []
+    all_token_texts = []
+    all_doc_idxs = []
+    for tokens, labels, doc_idx in zip(
+        eval_data["tokens"], eval_data["provided_labels"], eval_data["document"]
+    ):
+        for i, label in enumerate(labels):
+            if label != "O":
+                all_token_ids.append(i)
+                all_labels.append(label)
+                all_token_texts.append(tokens[i])
+                all_doc_idxs.append(doc_idx)
+
+    df = pd.DataFrame(
+        {
+            "token": all_token_ids,
+            "label": all_labels,
+            "document": all_doc_idxs,
+            "token_text": all_token_texts,
+        }
+    )
+
+    df["row_id"] = range(len(df))
+
+    return df
+
+def pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5, save_csv=True):
+    """
+    Parameters:
+    - pred_df (DataFrame): DataFrame containing predicted PII labels.
+    - gt_df (DataFrame): DataFrame containing ground truth PII labels.
+    - beta (float): The beta parameter for the F-beta score, controlling the trade-off between precision and recall.
+
+    Returns:
+    - float: Micro F-beta score.
+    """
+
+    df = pred_df.merge(
+        gt_df, how="outer", on=["document", "token"], suffixes=("_pred", "_gt")
+    )
+    df["cm"] = ""
+
+    df.loc[df.label_gt.isna(), "cm"] = "FP"
+    df.loc[df.label_pred.isna(), "cm"] = "FN"
+
+    # df.loc[(df.label_gt.notna()) & (df.label_gt != df.label_pred), "cm"] = "FNFP"
+    df.loc[
+        (df.label_gt.notna() & df.label_pred.notna()) & (df.label_gt != df.label_pred),
+        "cm",
+    ] = "FNFP"  # CHANGED
+
+    df.loc[
+        (df.label_pred.notna())
+        & (df.label_gt.notna())
+        & (df.label_gt == df.label_pred),
+        "cm",
+    ] = "TP"
+
+    FP = (df["cm"].isin({"FP", "FNFP"})).sum()
+    FN = (df["cm"].isin({"FN", "FNFP"})).sum()
+    TP = (df["cm"] == "TP").sum()
+    s_micro = (1 + (beta**2)) * TP / (((1 + (beta**2)) * TP) + ((beta**2) * FN) + FP)
+
+    if save_csv:
+        df.to_csv(
+            Path(output_dir) / (datetime.now().strftime("%Y%m%d%H%M%S") + "_pii_fbeta.csv")
+        )
+
+    return s_micro
+
+def compute_metrics(
+    eval_preds, id2label, tokenized_eval_ds, eval_data, gt_df, output_dir, threshold=0.9
+):
+    """
+    tokenized_eval_ds has multiple rows per sample (due to stride and overflow)
+
+    eval_data has one row per sample
+    """
+
+    predictions, labels = eval_preds
+
+    pred_df = get_all_preds(predictions, eval_data, tokenized_eval_ds, id2label, threshold=threshold)
+
+    f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
+
+    return {
+        "f5_score": f5,
+    }
