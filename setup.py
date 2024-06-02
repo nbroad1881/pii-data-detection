@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='piidd',
-    version='0.1.6',
+    version='0.1.16',
     packages=find_packages(),
     author='Nicholas Broad',
     description='Code for PII data detection Kaggle competition',
@@ -19,4 +19,6 @@ setup(
         'Programming Language :: Python :: 3.9',
     ],
     python_requires='>=3.6',
+    package_data={'piidd': ['data_generation/names/*.txt', 'data_generation/names/*.json']},  # Include txt files in data/
+    include_package_data=True,
 )
