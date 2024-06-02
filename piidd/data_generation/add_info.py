@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from faker import Faker
 from spacy.lang.en import English
 
+from piidd.data_generation.utils import first_names, last_names
+
 dotenv_path = Path("../../.env")
 if dotenv_path.exists():
     print("Loaded .env file!")
@@ -17,12 +19,6 @@ if dotenv_path.exists():
 
 this_dir = Path(__file__).parent
 
-first_names = json.load(
-    open(Path(os.environ["PROJECT_HOME_DIR"]) / "data/first_names.json")
-)
-last_names = json.load(
-    open(Path(os.environ["PROJECT_HOME_DIR"]) / "data/surnames.json")
-)
 
 domains = open(this_dir / "adding_pii" / "domains.txt").read().split("\n")
 website_terms = open(this_dir / "adding_pii" / "website_terms.txt").read().split("\n")
@@ -32,6 +28,25 @@ website_terms = open(this_dir / "adding_pii" / "website_terms.txt").read().split
 file_extensions = (
     open(this_dir / "adding_pii" / "file_extensions.txt").read().split("\n")
 )
+
+locales = [
+    "en_US",
+    "en_CA",
+    "en_GB",
+    "en_AU",
+    "en_IN",
+    "en_NZ",
+    "es_ES",
+    "fr_FR",
+    "es_MX",
+    "de",
+    "nl",
+    "pt_BR",
+    "it",
+    "id",
+    "pt_PT",
+    "fr_CA",
+]
 
 fake = Faker()
 en_tokenizer = English().tokenizer
@@ -123,9 +138,14 @@ def generate_website_path():
 
     domain = random.choice(domains)
 
-    path = generate_random_url_path(website_terms, length=random.choice([1, 2, 3, 4]))
+    path = generate_random_url_path(website_terms, length=random.choice([0, 1, 2, 3, 4]))
 
-    return start + name + "." + domain + "/" + path
+    if path != "":
+        path = "/" + path
+    elif random.random() < 0.5:
+        path = "/"
+
+    return start + name + "." + domain + path
 
 
 def generate_random_url_path(terms, length=3):
@@ -136,7 +156,11 @@ def generate_random_url_path(terms, length=3):
     :param length: Length of the URL path (number of terms to combine).
     :return: A randomly generated URL path.
     """
-    if length < 1 or length > len(terms):
+
+    if length < 1:
+        return ""
+
+    if length > len(terms):
         raise ValueError("Length must be between 1 and the number of terms provided.")
 
     # Shuffle the terms list to make the selection random
@@ -478,21 +502,23 @@ def add_info_to_claude(essay, generated_urls):
     }
 
 
-def add_info_to_mixtral(details, url_pattern="<<URL>>"):
+def add_info_to_mixtral(details, url_pattern="<<URL>>", add_header_and_footer=True):
 
     essay = details["essay"]
 
-    header_details = add_header(essay)
+    header_details = {}
+    if add_header_and_footer:
+        header_details = add_header(essay)
 
-    essay = header_details.pop("essay")
+        essay = header_details.pop("essay")
 
     personal_url = generate_website_path()
 
     essay = re.sub(url_pattern, add_brackets(personal_url, random.choice(BRACKETS)), essay)
 
-    name = header_details["name"]
-
-    essay = add_ending(essay, name)
+    if add_header_and_footer:
+        name = header_details["name"]
+        essay = add_ending(essay, name)
 
     return {
         **header_details,
@@ -546,7 +572,11 @@ def add_header(essay):
 
     header_template = random_header_template()
 
+    fake = Faker(random.choice(locales))
+
     address = fake.address()
+    if random.random() < 0.25:
+        address = address.replace("\n", " ")
 
     username = generate_social_username()
 

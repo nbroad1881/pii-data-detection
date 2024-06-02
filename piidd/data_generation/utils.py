@@ -13,9 +13,9 @@ this_dir = Path(__file__).parent.resolve()
 
 inspirational_people = list(set(open(this_dir / "names/inspirational_people.txt", "r").read().split("\n")))
 
-first_names = list(set(json.load(open(this_dir.parent.parent / "data/first_names.json"))))
-last_names = list(set(json.load(open(this_dir.parent.parent / "data/surnames.json"))))
-bios = Dataset.from_json(str(this_dir.parent.parent / "data/professional_bios.json"))
+first_names = list(set(json.load(open(this_dir / "names/first_names.json"))))
+last_names = list(set(json.load(open(this_dir / "names/surnames.json"))))
+bios = Dataset.from_json(str(this_dir / "names/professional_bios.json"))
 relations = [
     "friend",
     "colleague",
