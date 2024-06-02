@@ -1,0 +1,6 @@
+hydra-core
+transformers
+accelerate
+peft
+datasets
+wandb

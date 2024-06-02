@@ -80,7 +80,7 @@ def main():
     if args.msd:
         print("using msd model")
 
-        from piidd.models.layerdrop_deberta import MultiSampleDebertaV2ForTokenClassification
+        from piidd.models.custom_deberta import MultiSampleDebertaV2ForTokenClassification
         model_class = MultiSampleDebertaV2ForTokenClassification
     else:
         model_class = AutoModelForTokenClassification
