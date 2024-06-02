@@ -3,10 +3,12 @@ import argparse
 from pathlib import Path
 
 from transformers import (
+    AutoConfig,
     AutoTokenizer,
     AutoModelForTokenClassification,
     Trainer,
     TrainingArguments,
+    DataCollatorForTokenClassification,
 )
 from datasets import Dataset
 import numpy as np
@@ -69,6 +71,11 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
 
+    config = AutoConfig.from_pretrained(args.model_path)
+
+    if "MultiSample" in config.architectures[0]:
+        args.msd = True
+
 
     if args.msd:
         print("using msd model")
@@ -94,13 +101,19 @@ def main():
             batch_size=1,
             remove_columns=remove_cols,
         )
+        ds = ds.map(lambda x: {"length": [len(x) for x in x["input_ids"]]}, batched=True, num_proc=args.num_proc)
+        ds = ds.sort("length", reverse=True)
 
     trainer = Trainer(
         model=model,
         args=targs,
+        data_collator=DataCollatorForTokenClassification(tokenizer),
     )
 
-    predictions = trainer.predict(ds).predictions
+    if "labels" in ds.column_names:
+        predictions = trainer.predict(ds.remove_columns(["labels"])).predictions
+    else:
+        predictions = trainer.predict(ds).predictions
 
     ds.to_parquet(args.tokenized_output_path)
 

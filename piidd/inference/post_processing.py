@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 from datasets import Dataset
 from scipy.special import softmax
+from transformers import AutoConfig
 
 from piidd.processing.post import (
     get_all_preds,
@@ -17,8 +18,6 @@ from piidd.processing.post import (
     remove_bad_categories,
     check_phone_numbers,
 )
-from piidd.training.utils import make_gt_dataframe, pii_fbeta_score_v2
-
 
 def main():
 
@@ -45,8 +44,12 @@ def main():
     parser.add_argument("--correct_name_student_preds", action="store_true")
     parser.add_argument("--remove_bad_categories", action="store_true")
     parser.add_argument("--check_phone_numbers", action="store_true")
+    parser.add_argument("--calculate_f5", type=int, default=0)
 
     args = parser.parse_args()
+
+    if args.calculate_f5:
+        from piidd.training.utils import make_gt_dataframe, pii_fbeta_score_v2
 
     thresholds = [float(x) for x in args.thresholds.split(",")]
 
@@ -55,7 +58,10 @@ def main():
 
     predictions = softmax(np.load(args.preds_path), -1)
 
-    config = json.load(open(Path(args.model_dir) / "config.json"))
+    try:
+        config = json.load(open(Path(args.model_dir) / "config.json"))
+    except FileNotFoundError:
+        config = AutoConfig.from_pretrained(args.model_dir).to_dict()
 
     id2label = {int(i): ll for i, ll in config["id2label"].items()}
 
@@ -78,11 +84,12 @@ def main():
         pred_df.to_parquet(args.output_csv_path, index=False)
         return
 
-    gt_df = make_gt_dataframe(ds)
+    if args.calculate_f5:
+        gt_df = make_gt_dataframe(ds)
 
     f5s = []
     for th in thresholds:
-        pred_df, char_preds = get_all_preds(
+        results = get_all_preds(
             predictions,
             ds,
             tds,
@@ -91,64 +98,77 @@ def main():
             return_char_preds=args.return_char_preds,
         )
 
+        if args.return_char_preds:
+            pred_df, char_preds = results
+        else:
+            pred_df = results
+
         pred_df = check_name_casing(pred_df)
 
-        f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
+        if args.calculate_f5:
+            f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
 
-        f5s.append((f"f5-threshold={round(th, 2)}", round(f5, 5)))
+            f5s.append((f"f5-threshold={round(th, 2)}", round(f5, 5)))
 
         if args.add_repeated_names:
             pred_df = add_repeated_names(pred_df, data)
 
-            f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
+            if args.calculate_f5:
+                f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
 
-            f5s.append((f"f5-threshold={round(th, 2)}-repeated_names", round(f5, 5)))
+                f5s.append((f"f5-threshold={round(th, 2)}-repeated_names", round(f5, 5)))
 
         if args.add_emails_and_urls:
             pred_df = add_emails_and_urls(pred_df, data)
 
-            f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
+            if args.calculate_f5:
+                f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
 
-            f5s.append((f"f5-threshold={round(th, 2)}-emails_urls", round(f5, 5)))
+                f5s.append((f"f5-threshold={round(th, 2)}-emails_urls", round(f5, 5)))
 
         if args.remove_name_titles:
             pred_df = remove_name_titles(pred_df)
 
-            f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
+            if args.calculate_f5:
+                f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
 
-            f5s.append(
-                (f"f5-threshold={round(th, 2)}-remove_name_titles", round(f5, 5))
-            )
+                f5s.append(
+                    (f"f5-threshold={round(th, 2)}-remove_name_titles", round(f5, 5))
+                )
 
         if args.correct_name_student_preds:
             pred_df = correct_name_student_preds(pred_df)
 
-            f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
+            if args.calculate_f5:
+                f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
 
-            f5s.append(
-                (
-                    f"f5-threshold={round(th, 2)}-correct_name_student_preds",
-                    round(f5, 5),
+                f5s.append(
+                    (
+                        f"f5-threshold={round(th, 2)}-correct_name_student_preds",
+                        round(f5, 5),
+                    )
                 )
-            )
 
         if args.remove_bad_categories:
             pred_df = remove_bad_categories(pred_df)
 
-            f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
+            if args.calculate_f5:
+                f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
 
-            f5s.append(
-                (f"f5-threshold={round(th, 2)}-remove_bad_categories", round(f5, 5))
-            )
+                f5s.append(
+                    (f"f5-threshold={round(th, 2)}-remove_bad_categories", round(f5, 5))
+                )
 
         if args.check_phone_numbers:
             pred_df = check_phone_numbers(pred_df)
 
-            f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
 
-            f5s.append(
-                (f"f5-threshold={round(th, 2)}-check_phone_numbers", round(f5, 5))
-            )
+            if args.calculate_f5:
+                f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
+
+                f5s.append(
+                    (f"f5-threshold={round(th, 2)}-check_phone_numbers", round(f5, 5))
+                )
 
     print(f5s)
 
