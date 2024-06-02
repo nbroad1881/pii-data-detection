@@ -40,7 +40,7 @@ def upload_kaggle_dataset(storage_dir, dataset_name, owner):
 
 
 upload_kaggle_dataset(
-    "/drive2/kaggle/pii-dd/piidd/training/assertion/mistral-7b/checkpoint-4887",
-    dataset_name="pii-dd-mistral7b-multiclass-v1",
+    "/drive2/kaggle/pii-dd/piidd/training/basic/outputs/2024-04-05/19-16-15/checkpoint-1604",
+    dataset_name="piidd-d3l-empathic-enterprise-819",
     owner="nbroad"
 )

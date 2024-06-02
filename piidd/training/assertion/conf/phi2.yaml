@@ -1,0 +1,48 @@
+model_path: microsoft/phi-2
+max_length: 2048
+model_dtype: int4
+use_lora: yes
+use_dora: yes
+lora_r: 64
+lora_dropout: 0.1
+lora_modules: "all-linear"
+layer_drop_prob: 0.0
+use_multisample_dropout: no
+
+remove_bi: yes
+train_on_all_data: no
+random_seed: yes
+fold: 0
+
+main_dataset_path: "/drive2/kaggle/pii-dd/data/llm-names-v1.pq"
+
+num_proc: 8
+debugg: no
+wandb_run_group: "assertion"
+
+prompt_template: "{text}\n\nIn the above text, is {name} a person's name?"
+
+# training_args:
+output_dir: "outputs/phi2-v1"
+num_train_epochs: 3
+learning_rate: 5e-5
+lr_scheduler_type: "cosine"
+weight_decay: 0.01
+per_device_train_batch_size: 8
+per_device_eval_batch_size: 8
+gradient_accumulation_steps: 1
+gradient_checkpointing: yes
+fp16: yes
+logging_steps: 5
+evaluation_strategy: "epoch"
+eval_steps: 5
+save_strategy: "epoch"
+save_total_limit: 1
+dataloader_num_workers: 1
+metric_for_best_model: "accuracy"
+greater_is_better: yes
+report_to: "wandb"
+optim: "paged_adamw_8bit"
+max_grad_norm: 1.0
+
+

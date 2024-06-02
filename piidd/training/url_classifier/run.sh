@@ -33,21 +33,22 @@ export WANDB_RUN_GROUP="url_classifier"
 # done
 
 python train.py --model_path "microsoft/deberta-v3-large" \
---output_dir "d3l-only-url-v1" \
+--output_dir "d3l-v3" \
 --learning_rate 2e-5 \
 --save_strategy "epoch" \
 --save_total_limit 1 \
---num_train_epochs 5 \
---dataset_path "/drive2/kaggle/pii-dd/data/url_classification_only_url_v1.parquet" \
+--num_train_epochs 3 \
+--dataset_path "/drive2/kaggle/pii-dd/data/url_classification_v3.parquet" \
 --fp16 \
 --dataloader_num_workers 1 \
 --weight_decay 0.01 \
---per_device_train_batch_size 16 \
---per_device_eval_batch_size 16 \
+--per_device_train_batch_size 12 \
+--per_device_eval_batch_size 12 \
 --report_to "wandb" \
 --evaluation_strategy "epoch" \
 --logging_steps 2 \
 --lr_scheduler_type "cosine" \
 --train_on_all_data False \
 --metric_for_best_model "f1" \
---greater_is_better True
+--greater_is_better True \
+--optim "adamw_8bit"

@@ -1,4 +1,4 @@
-model_path: microsoft/deberta-v2-xlarge
+model_path: microsoft/mpnet-base
 max_length: 512
 stride: 128
 model_dtype: fp32
@@ -7,35 +7,33 @@ use_dora: yes
 lora_r: 32
 lora_dropout: 0.1
 lora_modules: "all-linear"
-layer_drop_prob: 0.1
+layer_drop_prob: 0.0
 use_multisample_dropout: no
 
-train_on_all_data: yes
+train_on_all_data: no
 filter_no_pii_percent_allow: 0.3
-add_newline_token: yes
+add_newline_token: no
 random_seed: yes
 fold: 0
-remove_classes: "I-URL_PERSONAL,I-EMAIL,I-USERNAME"
-remove_bi: no
+remove_classes: "I-EMAIL,I-USERNAME"
 
-main_dataset_path: "/drive2/kaggle/pii-dd/data/corrected_train_v2.json"
-extra_dataset_path: "/drive2/kaggle/pii-dd/data/mixtral-v3.json"
-num_extra_samples: 2000
+main_dataset_path: "/drive2/kaggle/pii-dd/data/train.json"
+extra_dataset_path: "/drive2/kaggle/pii-dd/data/mixtral-v2.json"
 
 num_proc: 8
 debugg: no
-wandb_run_group: d2xl
+wandb_run_group: mpnet
 
 # training_args:
-output_dir: "outputs/d2xl"
-num_train_epochs: 2
-learning_rate: 1e-5
+output_dir: "outputs/mpnet"
+num_train_epochs: 3
+learning_rate: 5e-5
 lr_scheduler_type: "cosine"
 weight_decay: 0.01
-per_device_train_batch_size: 6
-per_device_eval_batch_size: 6
+per_device_train_batch_size: 16
+per_device_eval_batch_size: 16
 gradient_accumulation_steps: 1
-gradient_checkpointing: yes
+gradient_checkpointing: no
 fp16: yes
 logging_steps: 50
 evaluation_strategy: "epoch"
@@ -46,6 +44,6 @@ metric_for_best_model: "f5_score"
 greater_is_better: yes
 report_to: "wandb"
 optim: "adamw_8bit"
-max_grad_norm: 0.3
+max_grad_norm: 1.0
 
 

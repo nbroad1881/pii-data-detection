@@ -1,34 +1,30 @@
-import json
 import random
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from datasets import Dataset
 from torch.utils.data import DataLoader
 from transformers import Trainer, TrainerCallback
 
-from piidd.models.layerdrop_deberta import MultiSampleDebertaV2ForTokenClassification
+from piidd.models.custom_deberta import MultiSampleDebertaV2ForTokenClassification
 from piidd.processing.post import get_all_preds
-
-this_dir = Path(__file__).resolve().parent
-
-FIRST_NAMES_FILEPATH = this_dir.parent.parent / "data/first_names.json"
-LAST_NAMES_FILEPATH = this_dir.parent.parent / "data/surnames.json"
+from piidd.data_generation.utils import first_names, last_names
 
 
 def swap_names(ds: Dataset, num_proc: int = 8):
-    first_names = json.load(open(FIRST_NAMES_FILEPATH))
-    last_names = json.load(open(LAST_NAMES_FILEPATH))
 
     def swap(example):
+        """
+        Swap names with random names
+        Will replace tokens with same string with the same name.
+        """
         mapping = {}
 
         new_tokens = []
 
         for token, label in zip(example["tokens"], example["provided_labels"]):
-            if "NAME" in label:
+            if "NAME_STUDENT" in label:
                 if label[0] == "B":
                     if token not in mapping:
                         mapping[token] = random.choice(first_names).title()
@@ -36,7 +32,9 @@ def swap_names(ds: Dataset, num_proc: int = 8):
                     if token not in mapping:
                         mapping[token] = random.choice(last_names).title()
 
-            new_tokens.append(mapping.get(token, token))
+                new_tokens.append(mapping.get(token, token))
+            else:
+                new_tokens.append(token)
 
         return {"tokens": new_tokens}
 
@@ -80,7 +78,9 @@ class SwapNameCallback(TrainerCallback):
         idx = random.choice(range(len(ds)))
         x = ds[idx]
 
-        b_name_student = self.trainer.model.config.label2id["B-NAME_STUDENT"]
+        b_name_student = self.trainer.model.config.label2id.get(
+            "B-NAME_STUDENT", self.trainer.model.config.label2id.get("NAME_STUDENT")
+        )
 
         while b_name_student not in x["labels"]:
             idx = random.choice(range(len(ds)))
@@ -129,7 +129,6 @@ def create_peft_model(
         model_kwargs["torch_dtype"] = torch.float32
     elif model_dtype == "fp16":
         model_kwargs["torch_dtype"] = torch.float16
-
 
     if use_multisample_dropout:
         model = MultiSampleDebertaV2ForTokenClassification.from_pretrained(
@@ -196,12 +195,10 @@ def filter_no_pii(example, percent_allow=0.2):
 
 def chunk_for_spanmarker(ds, max_length, num_proc=8):
 
-
     def chunk(example):
 
         new_tokens = []
         new_labels = []
-
 
         batch_tokens = example["tokens"]
         batch_labels = example["provided_labels"]
@@ -227,7 +224,9 @@ def chunk_for_spanmarker(ds, max_length, num_proc=8):
             "provided_labels": new_labels,
         }
 
-    return ds.map(chunk, batched=True, num_proc=num_proc, remove_columns=ds.column_names)
+    return ds.map(
+        chunk, batched=True, num_proc=num_proc, remove_columns=ds.column_names
+    )
 
 
 def make_gt_dataframe(eval_data):
@@ -258,6 +257,7 @@ def make_gt_dataframe(eval_data):
     df["row_id"] = range(len(df))
 
     return df
+
 
 def pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5, save_csv=True):
     """
@@ -297,11 +297,13 @@ def pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5, save_csv=True):
     s_micro = (1 + (beta**2)) * TP / (((1 + (beta**2)) * TP) + ((beta**2) * FN) + FP)
 
     if save_csv:
-        df.to_csv(
-            Path(output_dir) / (datetime.now().strftime("%Y%m%d%H%M%S") + "_pii_fbeta.csv")
+        df.to_parquet(
+            Path(output_dir)
+            / (datetime.now().strftime("%Y%m%d%H%M%S") + "_pii_fbeta.pq")
         )
 
     return s_micro
+
 
 def compute_metrics(
     eval_preds, id2label, tokenized_eval_ds, eval_data, gt_df, output_dir, threshold=0.9
@@ -314,7 +316,14 @@ def compute_metrics(
 
     predictions, labels = eval_preds
 
-    pred_df = get_all_preds(predictions, eval_data, tokenized_eval_ds, id2label, threshold=threshold)
+    if not any([x.startswith("B-") for x in id2label.values()]):
+        if "true_label" not in gt_df.columns:
+            gt_df["true_label"] = gt_df["label"]
+        gt_df["label"] = [x.split("-")[-1] for x in gt_df["label"]]
+
+    pred_df = get_all_preds(
+        predictions, eval_data, tokenized_eval_ds, id2label, threshold=threshold
+    )
 
     f5 = pii_fbeta_score_v2(pred_df, gt_df, output_dir, beta=5)
 

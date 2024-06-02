@@ -1,0 +1,46 @@
+model_path: microsoft/deberta-v2-xlarge
+
+layer_drop_prob: 0.0
+use_multisample_dropout: no
+
+num_token_before: 100
+num_token_after: 100
+
+remove_bi: no
+train_on_all_data: no
+add_newline_token: yes
+random_seed: yes
+fold: 0
+
+main_dataset_path: "/drive2/kaggle/pii-dd/data/corrected_train_v1.json"
+main_df_path: "/drive2/kaggle/pii-dd/data/oof_ds.pq"
+extra_dataset_path: "/drive2/kaggle/pii-dd/data/mixtral-v3.json"
+extra_df_path: "/drive2/kaggle/pii-dd/data/mixtral-v3.pq"
+num_extra_samples: 15000
+
+num_proc: 8
+debugg: no
+wandb_run_group: train_slm
+
+# training_args:
+output_dir: "outputs/d2xl"
+num_train_epochs: 3
+learning_rate: 2e-5
+lr_scheduler_type: "cosine"
+weight_decay: 0.01
+per_device_train_batch_size: 4
+per_device_eval_batch_size: 4
+gradient_accumulation_steps: 1
+gradient_checkpointing: yes
+fp16: yes
+logging_steps: 50
+evaluation_strategy: "epoch"
+save_strategy: "epoch"
+save_total_limit: 1
+dataloader_num_workers: 1
+metric_for_best_model: "accuracy"
+greater_is_better: yes
+report_to: "wandb"
+optim: "paged_adamw_8bit"
+max_grad_norm: 1.0
+warmup_ratio: 0.1

@@ -11,11 +11,11 @@ from transformers import (
     Trainer,
     TrainingArguments,
     DataCollatorForTokenClassification,
-    HfArgumentParser,
     set_seed,
 )
 from tokenizers import AddedToken
 from datasets import Dataset, concatenate_datasets
+import wandb
 import hydra
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
@@ -28,7 +28,7 @@ from piidd.training.utils import (
     compute_metrics,
     make_gt_dataframe,
 )
-from piidd.models.layerdrop_deberta import (
+from piidd.models.custom_deberta import (
     add_layer_drop,
     MultiSampleDebertaV2ForTokenClassification,
 )
@@ -36,6 +36,7 @@ from piidd.processing.pre import strided_tokenize, add_token_map
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 load_dotenv("../../../.env")
+
 
 @dataclass
 class Config(TrainingArguments):
@@ -49,8 +50,9 @@ class Config(TrainingArguments):
     lr: float = field(default=1e-5)
 
     train_on_all_data: bool = field(default=False)
-
+    remove_bi: bool = field(default=False)
     filter_no_pii_percent_allow: float = field(default=0.2)
+    num_extra_samples: int = field(default=2000)
 
     add_newline_token: bool = field(default=True)
 
@@ -74,8 +76,10 @@ class Config(TrainingArguments):
     main_dataset_path: str = field(default="train.json")
     extra_dataset_path: str = field(default=None)
     remove_classes: str = field(default="I-EMAIL,I-USERNAME")
+    swap_names: bool = field(default=False)
 
     debugg: bool = field(default=False)
+    
 
 
 @hydra.main(version_base=None, config_path="conf")
@@ -114,9 +118,14 @@ def main(cfg: DictConfig) -> None:
         "USERNAME",
     }
     all_labels = []
-    for ll in base_labels:
-        all_labels.append(f"B-{ll}")
-        all_labels.append(f"I-{ll}")
+
+    if not cfg.remove_bi:
+        for ll in base_labels:
+            all_labels.append(f"B-{ll}")
+            all_labels.append(f"I-{ll}")
+    else:
+        for ll in base_labels:
+            all_labels.append(ll)
     all_labels.append("O")
 
     if cfg.remove_classes is not None:
@@ -160,6 +169,8 @@ def main(cfg: DictConfig) -> None:
         elif cfg.extra_dataset_path.endswith(".pq"):
             ds2 = Dataset.from_parquet(cfg.extra_dataset_path)
 
+        ds2 = ds2.shuffle().select(range(min(cfg.num_extra_samples, len(ds2))))
+
     if "essay" in ds2.column_names:
         ds2 = ds2.rename_column("essay", "full_text")
     if "labels" in ds2.column_names:
@@ -172,8 +183,6 @@ def main(cfg: DictConfig) -> None:
 
     if cfg.debugg:
         raw_ds = raw_ds.select(range(500))
-
-        ds = ds1_train
 
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_path)
 
@@ -204,12 +213,6 @@ def main(cfg: DictConfig) -> None:
         batched=True,
         batch_size=1,
         remove_columns=remove_cols,
-        keep_in_memory=True,
-    )
-
-    ds1_test = ds1_test.filter(
-        filter_no_pii,
-        num_proc=cfg.num_proc,
         keep_in_memory=True,
     )
 
@@ -270,6 +273,13 @@ def main(cfg: DictConfig) -> None:
             )
             model.resize_token_embeddings(len(tokenizer), pad_to_multiple_of=16)
 
+    model.config.update(
+        {
+            "training_max_length": cfg.max_length,
+            "training_stride": cfg.stride,
+        }
+    )
+
     collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=16)
 
     trainer = Trainer(
@@ -289,21 +299,24 @@ def main(cfg: DictConfig) -> None:
         ),
     )
 
-    swcb = SwapNameCallback(
-        raw_ds,
-        partial(
-            strided_tokenize,
-            tokenizer=tokenizer,
-            label2id=label2id,
-            max_length=cfg.max_length,
-            stride=cfg.stride,
-        ),
-        trainer=trainer,
-    )
+    if cfg.swap_names:
+        swcb = SwapNameCallback(
+            raw_ds,
+            partial(
+                strided_tokenize,
+                tokenizer=tokenizer,
+                label2id=label2id,
+                max_length=cfg.max_length,
+                stride=cfg.stride,
+            ),
+            trainer=trainer,
+        )
 
-    trainer.add_callback(swcb)
+        trainer.add_callback(swcb)
 
     trainer.train()
+
+    wandb.finish()
 
 
 if __name__ == "__main__":
