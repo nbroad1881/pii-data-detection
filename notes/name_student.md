@@ -189,6 +189,14 @@ I started by creating a fictional character based on the students I talked to th
 
 ---
 
+19104
+
+```
+After organizing all of this data, I created a Customer Persona for my client. Name Anthony Johnson. Title: Founder and CEO of the company Decision-maker: Yes Industry: Software and technology. Age: 30 years old Salary: $30 000 a year Employees: Over 20 Education: Bachelor's degree in computer science Goals: Generate a consistent and predictable stream of clients for his Saas products on a monthly subscription basis. We assist in the following ways: Create a sales funnel and use Facebook Ads Marketing to drive traffic to Anthony's products. Messaging Strategy: Reach out to Anthony via cold email and use email copy that directly addresses his lack of sales skills and how we can get him clients more consistently and predictably, allowing him to focus on creating solutions for his customers. Approach
+```
+
+---
+
 
 Stories:
 
@@ -218,6 +226,7 @@ Stories:
 - I don't think there should be more than one period in the name. 
 
 - Put instructor names as decoys in generated data
+- When training using strided predictions, the model can lose track of the names. The first mention is the most important. Should the dataset filter out later mentions?
 
 ```python
   matches = list()

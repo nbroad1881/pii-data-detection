@@ -4,8 +4,6 @@ Jordi should not be a name. It is a city. Should be changed to token SHIBPUR and
 Multiple Jordi's
 
 
-
-
 9493
 
 SUNITH, NITHIN are names. Should be titled and labeled
@@ -36,7 +34,7 @@ MORAL OF THE STORY: Water is one of life's most precious resources.  We all must
 
 9421
 
-Libby Bingham seems like a name
+~~Libby Bingham seems like a name~~
 
 
 3709
@@ -52,7 +50,7 @@ Simona Gamal should be name
 
 11208
 
-Glen Styles should be a name
+~~Glen Styles should be a name~~
 
 4600
 
@@ -60,8 +58,8 @@ Isabel Yomna is the name of both the instructor and student. The instructor name
 
 3427
 
-Katia Rania should be name label
-
+~~Katia Rania should be name label~~
+CORRECTION: Katia Rania is instructor
 
 
 2915
@@ -74,7 +72,7 @@ Has same first name as student
 4717
 
 
-The numbers 221910309005 and 221910309006 are confusing
+~~The numbers 221910309005 and 221910309006 are confusing~~
 
 8302
 
@@ -150,7 +148,6 @@ Paolina seems like a real name
 Maybe 9043, 9027 are IDs
 
 
-
 6393
 
 youtube video should be personal
@@ -176,10 +173,10 @@ First Nandan is correct, the others should not be considered names.
 
 11442
 
-The address looks like it wasn't annotated fully. The beginning of the real address is right before the fake address. The label starts at 743 Erika.
+~~The address looks like it wasn't annotated fully. The beginning of the real address is right before the fake address. The label starts at 743 Erika.~~
 
-1861. Milano - 743 Erika Bypass Apt. 419
-Andreahaven, IL 54207
+~~1861. Milano - 743 Erika Bypass Apt. 419
+Andreahaven, IL 54207~~
 
 
 13144
@@ -195,3 +192,50 @@ delete space to make single URL
 
 2722
 Jaramillo should be I-NAME_STUDENT, Hector should be B-NAME_STUDENT
+
+17832
+
+https://medium.com/unilaproex is a personal url
+
+
+21564
+
+Chesdin Harrington is name
+
+
+21580
+
+Christopher​ ​Thorborg is name
+
+22088
+
+María José Reyes is name
+
+
+19936
+
+Cachet Prescott name
+
+
+22023
+
+Vinay Kolusu name
+
+
+10324
+
+Khairah, Safiyah, Hannah
+
+
+11856
+
+Geoff
+
+
+21527
+
+Tomasz Ostrowski name
+
+21538
+
+Alex Brulliea name

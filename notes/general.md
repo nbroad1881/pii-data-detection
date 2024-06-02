@@ -100,3 +100,58 @@ There definitely are:
       - length
       - etc.
     - After validation, train on 2 folds
+
+### March 31
+
+- Looked over [Feedback Prize ESW](https://www.kaggle.com/competitions/feedback-prize-2021/discussion?sort=published) 1st place second stage lgbm [discussion](https://www.kaggle.com/competitions/feedback-prize-2021/discussion/313177) and [model](https://www.kaggle.com/code/wht1996/feedback-lgb-train) and the [notebook](https://www.kaggle.com/code/chasembowers/sequence-postprocessing-v2-67-lb) it was based off of. Tried to use OOF predictions and got bad results. May try again with in-fold predictions on as much data as possible. Will also switch to binary predictions
+- Adding more locales to address and phone numbers (en_GB, es_ES, etc.). Must have latin characters
+  - With only 2 addresses in training data and 
+- Training d1xl with lora, but it's doing worse than d1b
+- d1b got 971 on validation, only 948 on lb
+- d3l trained on all data got 968 using piidd lib
+- use mistral 7b 0.1/0.2 with 30k position embeddings deleted, 1-2 layers removed so it can be used in fp16 on single gpu
+- need different model types (llm, lstm, longformer)
+- potentially try something like this where predict 1 B class, and 1 class for each label + outside. [link](https://www.kaggle.com/competitions/feedback-prize-2021/discussion/315887)
+
+
+### April 2
+
+- Tried combining url classifier, did worse.
+  - Maybe overfit to train set ()
+- second stage with only token predictions from 3 models gets 936 on competition dataset (some leak)
+- explored predictions more, can potentially use oof predictions to help write rules
+- different thresholds for each class
+- need another validation set besides competition (there aren't enough entities)
+
+
+### April 3
+
+- Noticed high scores in two different categories for overlap (I-name, O). Maybe consider throwing out if not enough context? e.g. on idx >=1, ignore scores in first 10-20 tokens. Have second model decide?
+- No B,I seems like a good idea
+- Use str.istitle() as feature before classification to help with names
+- there are a few urls like "http://www.tate.com/" which don't have a long path. Maybe adding more of these would help the model understand
+- made smaller mistral (30/28 layers) to use in fp16 on t4
+
+### April 4
+
+- Username must be lowercase
+  - OOF predictions have high B-USERNAME scores, lowest is 0.6
+  - OOF predictions will have high O scores for non-username tokens
+- might be issue with labeling \n for street addresses
+  - If the tokenizer cannot handle \n then, it cannot predict it!
+    - deberta-v3 cannot see \n by default
+    - deberta-v2 does not have \n
+    - deberta-v1 has Ċ for \n
+  - found bug in tokenization! wasn't labeling \n even if token was added!!
+- created mixtral-v3 dataset that has some urls without long paths
+
+
+### April 5
+
+- submissions low score (954) :(
+- training without BI
+- maybe have LSTM head that uses embeddings + class predictions + edge labels (spacy tokens) to predict start/end
+- need smarter second stage
+- need reliable CV besides train set
+- need to know which "empty" samples should be in train set
+- double-check why fold 2 struggles so much

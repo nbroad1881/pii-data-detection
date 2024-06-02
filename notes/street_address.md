@@ -5,7 +5,7 @@ Only two street addresses were provided. They both have:
 3. Apartment numbers
 
 
-One is in the header, one is 
+One is in the header, one is in the intro paragraph.
 
 ---
 
