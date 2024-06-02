@@ -43,71 +43,28 @@ def char2token_preds(
     # pair of (token_id, scores)
     token_preds = []
 
-    # go through token map
-    # find char indices for a token
-    # get preds for that span
-    current = token_map[0]
-    start_idx = 0
-    i = 1
-    while i < len(token_map):
-        # both -1 --> continue
-        if current == -1 and token_map[i] == -1:
-            i += 1
-            continue
-        # current is -1, token_map[i] is not --> track start index, set current to new value
-        if current == -1 and token_map[i] != -1:
-            start_idx = i
-            current = token_map[i]
-            i += 1
+    tm = np.array(token_map)
 
-        # current is not -1, token_map[i] is -1 --> keep moving forward, don't change start_idx or current
-        elif current != -1 and token_map[i] == current:
-            i += 1
+    token_idxs = sorted(list(set(tm) - {-1}))
 
-        # current is not -1, token_map[i] is -1
-        elif current != token_map[i]:
-            end_idx = i
+    for i in token_idxs:
+        pooled_scores = pool(char_preds[tm == i])
 
-            pooled_scores = pool(char_preds[start_idx:end_idx])
-            # pooled_scores.shape == (len(all_labels),)
+        if return_all_token_scores:
+            token_preds.append((i, pooled_scores))
+        else:
+            # can do thresholding here
 
-            if return_all_token_scores:
-                token_preds.append((current, pooled_scores))
+            top_ids = pooled_scores.argsort()[::-1]  # reverse to go from high to low
+
+            if pooled_scores.sum() < 1e-4:
+                continue
+
+            if id2label[top_ids[0]] == "O":
+                if pooled_scores[top_ids[0]] < threshold:
+                    token_preds.append((i, id2label[top_ids[1]]))
             else:
-                # can do thresholding here
-
-                top_ids = pooled_scores.argsort()[
-                    ::-1
-                ]  # reverse to go from high to low
-
-                if id2label[top_ids[0]] == "O":
-                    if pooled_scores[top_ids[0]] < threshold:
-                        token_preds.append((current, id2label[top_ids[1]]))
-                else:
-                    token_preds.append((current, id2label[top_ids[0]]))
-
-            start_idx = i
-            current = token_map[i]
-            i += 1
-
-    # check the last token
-    if current != -1 and start_idx < len(token_map):
-        if len(token_preds) == 0 or token_preds[-1][0] != current:
-
-            end_idx = len(token_map)
-
-            pooled_scores = pool(char_preds[start_idx:end_idx])
-
-            if return_all_token_scores:
-                token_preds.append((current, pooled_scores))
-            else:
-                top_ids = pooled_scores.argsort()[::-1]
-
-                if id2label[top_ids[0]] == "O":
-                    if pooled_scores[top_ids[0]] < threshold:
-                        token_preds.append((current, id2label[top_ids[1]]))
-                else:
-                    token_preds.append((current, id2label[top_ids[0]]))
+                token_preds.append((i, id2label[top_ids[0]]))
 
     return token_preds
 
@@ -127,7 +84,7 @@ def make_pred_df(
 
     for preds, doc_idx, tokens in zip(all_preds, doc_idxs, all_tokens):
         for token_id, label_preds in preds:
-            if tokens[token_id].isspace():
+            if tokens[token_id].isspace() and "\n" not in tokens[token_id]:
                 continue
 
             if return_all_token_scores:
@@ -179,12 +136,16 @@ def get_all_preds(
     all_char_preds = []
 
     for idx in raw_ds["idx"]:
+
+        # if idx == 196:
+        #     print()
+
         temp_preds = [predictions[x] for x in idx2tidxs[idx]]
         temp_tds = tokenized_ds.select(idx2tidxs[idx])
 
         token_map = raw_ds[idx]["token_map"]
 
-        char_preds = np.zeros((len(raw_ds[idx]["full_text"]), len(id2label)))
+        char_preds = np.zeros((len(token_map), len(id2label)))
 
         for preds, offsets in zip(temp_preds, temp_tds["offset_mapping"]):
             for (start_idx, end_idx), p in zip(offsets, preds):
@@ -198,7 +159,11 @@ def get_all_preds(
                 )
 
         token_preds = char2token_preds(
-            char_preds, token_map, id2label, threshold=threshold, return_all_token_scores=return_all_token_scores
+            char_preds,
+            token_map,
+            id2label,
+            threshold=threshold,
+            return_all_token_scores=return_all_token_scores,
         )
 
         all_preds.append(token_preds)
@@ -455,5 +420,264 @@ def check_phone_numbers(pred_df):
             if len(token_text) > 4:
                 if not any([x in token_text for x in {"(", ")", ".", "x", "-", "+"}]):
                     pred_df.at[i, "label"] = "B-ID_NUM"
+
+    return pred_df
+
+
+def manual_check(
+    pred_df,
+    thresholds={
+        "NAME_STUDENT": 0.15,
+        "USERNAME": 0.5,
+        "EMAIL": 0.7,
+        "URL_PERSONAL": 0.7,
+        "PHONE_NUM": 0.5,
+        "STREET_ADDRESS": 0.5,
+        "ID_NUM": 0.5,
+    },
+):
+    """
+    Assumes that the labels do not have B or I
+    """
+
+    not_title = ~pred_df["token_text"].str.istitle()
+    has_other_chars = pred_df["token_text"].str.contains("[^a-zA-Z\.]")
+
+    pred_df.loc[(not_title | has_other_chars), "NAME_STUDENT"] = 0
+
+    pred_df.loc[~pred_df["token_text"].str.islower(), "USERNAME"] = 0
+    pred_df.loc[pred_df["token_text"].str.isspace(), ["USERNAME", "ID_NUM"]] = 0
+
+    pred_df.loc[
+        pred_df["token_text"].str.contains("(http)|(www)|(://)"),
+        ["NAME_STUDENT", "USERNAME", "ID_NUM", "EMAIL", "PHONE_NUM", "STREET_ADDRESS"],
+    ] = 0
+
+    pred_df.loc[
+        pred_df["token_text"].isin({"\n", "\n\n"}),
+        ["NAME_STUDENT", "USERNAME", "ID_NUM", "EMAIL", "PHONE_NUM", "URL_PERSONAL"],
+    ] = 0
+
+    leq_1 = pred_df["token_text"].str.len() <= 1
+
+    pred_df.loc[leq_1, ["NAME_STUDENT", "USERNAME", "EMAIL", "URL_PERSONAL"]] = 0
+
+    leq_4 = pred_df["token_text"].str.len() <= 4
+
+    pred_df.loc[leq_4, ["USERNAME", "EMAIL", "URL_PERSONAL"]] = 0
+
+    pred_df.loc[~pred_df["token_text"].str.contains("@"), "EMAIL"] = 0
+
+    all_preds = []
+
+    for d in pred_df["document"].unique():
+        filtered = pred_df[pred_df["document"] == d]
+
+        # NAMES
+        temp_name_df = filtered[filtered["NAME_STUDENT"] > thresholds["NAME_STUDENT"]]
+
+        temp_preds = []
+        for idx, token_text in temp_name_df[["token", "token_text"]].values:
+            if token_text.rstrip(".") in {"Mr", "Mrs", "Dr", "Ms", "Miss", "Prof"}:
+                continue
+
+            if len(temp_preds) == 0:
+                temp_preds.append((d, idx, "B-NAME_STUDENT", token_text))
+            else:
+                if temp_preds[-1][1] + 1 == idx:
+                    temp_preds.append((d, idx, "I-NAME_STUDENT", token_text))
+                else:
+                    temp_preds.append((d, idx, "B-NAME_STUDENT", token_text))
+
+        # maybe add repeat names
+
+        # URLS
+
+        temp_url_df = filtered[
+            (filtered["URL_PERSONAL"] > thresholds["URL_PERSONAL"])
+            & (filtered["token_text"].str.len() > 5)
+        ]
+        temp_preds.extend(
+            [
+                (d, idx, "B-URL_PERSONAL", token_text)
+                for idx, token_text in temp_url_df[["token", "token_text"]].values
+            ]
+        )
+
+        # EMAILS
+
+        temp_email_df = filtered[
+            (filtered["EMAIL"] > thresholds["EMAIL"])
+            & (~filtered["token_text"].str.isspace())
+        ]
+        temp_preds.extend(
+            [
+                (d, idx, "B-EMAIL", token_text)
+                for idx, token_text in temp_email_df[["token", "token_text"]].values
+            ]
+        )
+
+        # STREET_ADDRESS
+
+        temp_street_df = filtered[
+            filtered["STREET_ADDRESS"] > thresholds["STREET_ADDRESS"]
+        ]
+
+        for idx, token_text in temp_street_df[["token", "token_text"]].values:
+
+            if len(temp_preds) == 0:
+                temp_preds.append((d, idx, "B-STREET_ADDRESS", token_text))
+            else:
+                if temp_preds[-1][1] + 1 == idx and temp_preds[-1][2].endswith(
+                    "STREET_ADDRESS"
+                ):
+                    temp_preds.append((d, idx, "I-STREET_ADDRESS", token_text))
+                else:
+                    temp_preds.append((d, idx, "B-STREET_ADDRESS", token_text))
+
+        # USERNAME
+
+        temp_username_df = filtered[filtered["USERNAME"] > thresholds["USERNAME"]]
+        temp_preds.extend(
+            [
+                (d, idx, "B-USERNAME", token_text)
+                for idx, token_text in temp_username_df[["token", "token_text"]].values
+            ]
+        )
+
+        # PHONE_NUM
+
+        temp_phone_df = filtered[filtered["PHONE_NUM"] > thresholds["PHONE_NUM"]]
+
+        for idx, token_text in temp_phone_df[["token", "token_text"]].values:
+            if len(temp_preds) == 0:
+                temp_preds.append((d, idx, "B-PHONE_NUM", token_text))
+            else:
+                if temp_preds[-1][1] + 1 == idx and temp_preds[-1][2].endswith(
+                    "PHONE_NUM"
+                ):
+                    temp_preds.append((d, idx, "I-PHONE_NUM", token_text))
+                else:
+                    temp_preds.append((d, idx, "B-PHONE_NUM", token_text))
+
+        # ID_NUM
+
+        temp_id_df = filtered[filtered["ID_NUM"] > thresholds["ID_NUM"]]
+
+        for idx, token_text in temp_id_df[["token", "token_text"]].values:
+            if len(temp_preds) == 0:
+                temp_preds.append((d, idx, "B-ID_NUM", token_text))
+            else:
+                if temp_preds[-1][1] + 1 == idx and temp_preds[-1][2].endswith(
+                    "ID_NUM"
+                ):
+                    temp_preds.append((d, idx, "I-ID_NUM", token_text))
+                else:
+                    temp_preds.append((d, idx, "B-ID_NUM", token_text))
+
+        all_preds.extend(temp_preds)
+
+    return pd.DataFrame(all_preds, columns=["document", "token", "label", "token_text"])
+
+
+def manual_v2(pred_df):
+
+    not_title = ~pred_df["token_text"].str.istitle()
+    has_other_chars = pred_df["token_text"].str.contains("[^a-zA-Z\.]")
+
+    pred_df.loc[(not_title | has_other_chars), ["B-NAME_STUDENT", "I-NAME_STUDENT"]] = 0
+
+    pred_df.loc[~pred_df["token_text"].str.islower(), "B-USERNAME"] = 0
+    pred_df.loc[pred_df["token_text"].str.isspace(), ["B-USERNAME", "B-ID_NUM"]] = 0
+
+    pred_df.loc[
+        pred_df["token_text"].str.contains("(http)|(www)|(://)"),
+        [
+            f"B-{x}"
+            for x in [
+                "NAME_STUDENT",
+                "USERNAME",
+                "ID_NUM",
+                "EMAIL",
+                "PHONE_NUM",
+                "STREET_ADDRESS",
+            ]
+        ]
+        + [f"I-{x}" for x in ["NAME_STUDENT", "ID_NUM", "PHONE_NUM", "STREET_ADDRESS"]],
+    ] = 0
+
+    pred_df.loc[
+        pred_df["token_text"].isin({"\n", "\n\n"}),
+        [
+            f"B-{x}"
+            for x in [
+                "NAME_STUDENT",
+                "USERNAME",
+                "ID_NUM",
+                "EMAIL",
+                "PHONE_NUM",
+                "URL_PERSONAL",
+            ]
+        ]
+        + [
+            f"I-{x}"
+            for x in [
+                "NAME_STUDENT",
+                "ID_NUM",
+                "PHONE_NUM",
+            ]
+        ],
+    ] = 0
+
+    leq_1 = pred_df["token_text"].str.len() <= 1
+
+    pred_df.loc[
+        leq_1,
+        [f"B-{x}" for x in ["NAME_STUDENT", "USERNAME", "EMAIL", "URL_PERSONAL"]]
+        + ["I-NAME_STUDENT"],
+    ] = 0
+
+    leq_4 = pred_df["token_text"].str.len() <= 3
+
+    pred_df.loc[leq_4, [f"B-{x}" for x in ["USERNAME", "EMAIL", "URL_PERSONAL"]]] = 0
+
+    pred_df.loc[~pred_df["token_text"].str.contains("@"), "B-EMAIL"] = 0
+
+    cols = [
+        "B-EMAIL",
+        "B-ID_NUM",
+        "B-NAME_STUDENT",
+        "B-PHONE_NUM",
+        "B-STREET_ADDRESS",
+        "B-URL_PERSONAL",
+        "B-USERNAME",
+        "I-ID_NUM",
+        "I-NAME_STUDENT",
+        "I-PHONE_NUM",
+        "I-STREET_ADDRESS",
+    ]
+
+    pred_df = pred_df.sort_values(["document", "token"])
+
+    high_scores = pred_df[cols].max(axis=1) > 0.15
+    low_o = pred_df["O"] < 0.9
+
+    pred_df["label"] = pred_df[cols+["O"]].idxmax(axis=1)
+    pred_df.loc[high_scores&low_o, "label"] = pred_df.loc[high_scores&low_o, cols].idxmax(axis=1)
+
+
+    url_likely = pred_df["token_text"].str.contains("(http)|(www)|(://)")
+    high_url_score = pred_df["B-URL_PERSONAL"] > 0.15
+
+    pred_df.loc[
+        url_likely&high_url_score,
+        "label",
+    ] = "B-URL_PERSONAL"
+
+    pred_df.loc[
+        pred_df[cols].sum(axis=1) < 1e-3,
+        "label"
+    ] = "O"
+
 
     return pred_df
