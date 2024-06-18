@@ -1,7 +1,7 @@
 # pii-data-detection
 
 
-This repository contains the code for the kaggle competition: [PII Data Detection](https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data) in which I placed 9th place out of 2048 teams.
+This repository contains the code for the kaggle competition: [PII Data Detection](https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data) in which I placed 9th place out of 2048 teams. [Here is my write-up.](https://www.kaggle.com/competitions/pii-detection-removal-from-educational-data/discussion/497177)
 
 
 The package can be installed by cloning the repo and running `pip install -e .` when in the directory. Requirements are in `requirements.txt`
